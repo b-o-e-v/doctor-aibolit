@@ -1,0 +1,34 @@
+version: '3'
+
+volumes:
+  pg_data:
+
+services:
+  backend:
+    build: ./
+    container_name: backend
+    restart: always
+    ports:
+      - "8080:8080"
+    networks:
+      - doctor_network
+    volumes:
+      - ./.env:/root/.env
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres:13
+    container_name: postgres
+    restart: always
+    ports:
+      - "5432:5432"
+    networks:
+      - doctor_network
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    env_file: .env
+
+networks:
+  doctor_network:
+    driver: bridge

@@ -1,0 +1,5 @@
+# version control system
+.git
+
+# env file
+.env
