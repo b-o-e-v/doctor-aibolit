@@ -14,22 +14,53 @@ func TestGenerateSchedule(t *testing.T) {
 		expectedResult []time.Time
 	}{
 		{
+			name:      "Testing long frequency",
+			startDate: time.Date(2025, 3, 5, 9, 0, 0, 0, time.UTC),
+			endDate:   time.Date(2025, 3, 12, 23, 59, 0, 0, time.UTC),
+			frequency: 17 * time.Hour,
+			expectedResult: []time.Time{
+				time.Date(2025, 3, 5, 9, 0, 0, 0, time.UTC),
+				time.Date(2025, 3, 6, 8, 0, 0, 0, time.UTC),
+				time.Date(2025, 3, 7, 8, 0, 0, 0, time.UTC),
+				time.Date(2025, 3, 8, 8, 0, 0, 0, time.UTC),
+				time.Date(2025, 3, 9, 8, 0, 0, 0, time.UTC),
+				time.Date(2025, 3, 10, 8, 0, 0, 0, time.UTC),
+				time.Date(2025, 3, 11, 8, 0, 0, 0, time.UTC),
+				time.Date(2025, 3, 12, 8, 0, 0, 0, time.UTC),
+			},
+		},
+		{
+			name:      "Testing hours with minutes in frequency",
+			startDate: time.Date(2025, 3, 5, 15, 0, 0, 0, time.UTC),
+			endDate:   time.Date(2025, 3, 6, 12, 0, 0, 0, time.UTC),
+			frequency: 1*time.Hour + 44*time.Minute,
+			expectedResult: []time.Time{
+				time.Date(2025, 3, 5, 15, 0, 0, 0, time.UTC),
+				time.Date(2025, 3, 5, 16, 45, 0, 0, time.UTC),
+				time.Date(2025, 3, 5, 18, 30, 0, 0, time.UTC),
+				time.Date(2025, 3, 5, 20, 15, 0, 0, time.UTC),
+				time.Date(2025, 3, 6, 8, 0, 0, 0, time.UTC),
+				time.Date(2025, 3, 6, 9, 45, 0, 0, time.UTC),
+				time.Date(2025, 3, 6, 11, 30, 0, 0, time.UTC),
+			},
+		},
+		{
 			name:      "Testing rounding to multiples of 15",
 			startDate: time.Date(2025, 3, 5, 17, 7, 0, 0, time.UTC),
 			endDate:   time.Date(2025, 3, 7, 13, 27, 0, 0, time.UTC),
 			frequency: 6 * time.Hour,
 			expectedResult: []time.Time{
 				time.Date(2025, 3, 5, 17, 15, 0, 0, time.UTC),
-				time.Date(2025, 3, 6, 8, 00, 0, 0, time.UTC),
-				time.Date(2025, 3, 6, 14, 00, 0, 0, time.UTC),
-				time.Date(2025, 3, 6, 20, 00, 0, 0, time.UTC),
-				time.Date(2025, 3, 7, 8, 00, 0, 0, time.UTC),
+				time.Date(2025, 3, 6, 8, 0, 0, 0, time.UTC),
+				time.Date(2025, 3, 6, 14, 0, 0, 0, time.UTC),
+				time.Date(2025, 3, 6, 20, 0, 0, 0, time.UTC),
+				time.Date(2025, 3, 7, 8, 0, 0, 0, time.UTC),
 			},
 		},
 		{
 			name:      "Testing table creation late at night",
 			startDate: time.Date(2025, 3, 5, 22, 0, 0, 0, time.UTC),
-			endDate:   time.Date(2025, 3, 6, 9, 00, 0, 0, time.UTC),
+			endDate:   time.Date(2025, 3, 6, 9, 0, 0, 0, time.UTC),
 			frequency: time.Hour,
 			expectedResult: []time.Time{
 				time.Date(2025, 3, 6, 8, 0, 0, 0, time.UTC),
