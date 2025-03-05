@@ -17,7 +17,10 @@ CREATE TABLE schedules (
   start_date TIMESTAMP NOT NULL DEFAULT NOW(),
   end_date TIMESTAMP GENERATED ALWAYS AS (
     CASE WHEN duration IS NOT NULL THEN start_date + duration ELSE NULL END
-  ) STORED
+  ) STORED,
+  CONSTRAINT check_frequency_range CHECK (
+    frequency >= INTERVAL '1 hour' AND frequency <= INTERVAL '1 day'
+  )
 );
 
 CREATE TABLE takings (
