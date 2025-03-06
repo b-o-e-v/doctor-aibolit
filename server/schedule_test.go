@@ -108,33 +108,3 @@ func equal(a, b []time.Time) bool {
 	}
 	return true
 }
-
-func TestIsValidFrequency(t *testing.T) {
-	tests := []struct {
-		name     string
-		duration time.Duration
-		expected bool
-	}{
-		// допустимые значения частоты
-		{"1Hour", 1 * time.Hour, true},
-		{"2Hours", 2 * time.Hour, true},
-		{"1Day", 24 * time.Hour, true},
-		{"Near1Day", 23*time.Hour + 59*time.Minute, true},
-
-		// недопустимые значения частоты
-		{"ZeroHours", 0 * time.Hour, false},
-		{"LessThan1Hour", 30 * time.Minute, false},
-		{"MoreThan1Day", 25 * time.Hour, false},
-		{"2Days", 48 * time.Hour, false},
-		{"NegativeDuration", -1 * time.Hour, false},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := isValidFrequency(tt.duration)
-			if got != tt.expected {
-				t.Errorf("isValidFrequency(%v) = %v; want %v", tt.duration, got, tt.expected)
-			}
-		})
-	}
-}

@@ -8,12 +8,13 @@ import (
 )
 
 type Envs struct {
-	Port       string
-	UserDB     string
-	PasswordDB string
-	NameDB     string
-	HostDB     string
-	PortDB     string
+	Port            string
+	UserDB          string
+	PasswordDB      string
+	NameDB          string
+	HostDB          string
+	PortDB          string
+	DefaultDuration string
 }
 
 var Config = &Envs{}
@@ -24,12 +25,13 @@ func Init() error {
 	}
 
 	Config = &Envs{
-		Port:       os.Getenv("APP_PORT"),
-		UserDB:     os.Getenv("POSTGRES_USER"),
-		PasswordDB: os.Getenv("POSTGRES_PASSWORD"),
-		NameDB:     os.Getenv("POSTGRES_DB"),
-		HostDB:     os.Getenv("POSTGRES_HOST"),
-		PortDB:     os.Getenv("POSTGRES_PORT"),
+		Port:            os.Getenv("APP_PORT"),
+		UserDB:          os.Getenv("POSTGRES_USER"),
+		PasswordDB:      os.Getenv("POSTGRES_PASSWORD"),
+		NameDB:          os.Getenv("POSTGRES_DB"),
+		HostDB:          os.Getenv("POSTGRES_HOST"),
+		PortDB:          os.Getenv("POSTGRES_PORT"),
+		DefaultDuration: os.Getenv("DEFAULT_DURATION"),
 	}
 
 	fmt.Println("successfully loaded environment variables!")

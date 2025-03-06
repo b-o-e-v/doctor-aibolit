@@ -20,6 +20,9 @@ CREATE TABLE schedules (
   ) STORED,
   CONSTRAINT check_frequency_range CHECK (
     frequency >= INTERVAL '1 hour' AND frequency <= INTERVAL '1 day'
+  ),
+  CONSTRAINT check_duration CHECK (
+    duration IS NULL OR duration >= frequency
   )
 );
 

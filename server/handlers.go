@@ -8,6 +8,7 @@ import (
 
 	"github.com/b-o-e-v/doctor-aibolit/models"
 	"github.com/b-o-e-v/doctor-aibolit/pkg/db"
+	"github.com/b-o-e-v/doctor-aibolit/pkg/envs"
 	"github.com/gin-gonic/gin"
 )
 
@@ -19,7 +20,7 @@ const QUERY_TAKING_CREATE = `INSERT INTO takings (schedule_id, taking_time) VALU
 const QUERY_SCHEDULE_CREATE = `
   INSERT INTO schedules (user_id, medication_id, frequency, duration, start_date)
   VALUES ($1, $2, $3, $4, NOW())
-  RETURNING id, start_date, end_date
+  RETURNING id, start_date, end_date, EXTRACT(EPOCH FROM frequency) AS frequency_seconds
 `
 
 // поскольку у нас есть отдельная таблица с пользователями, нам нужно проверить его существование
@@ -59,20 +60,15 @@ func checkMedicationExists(tx *sql.Tx, medicationID int64) error {
 func createSchedule(c *gin.Context) {
 	var data models.ScheduleRequest
 
+	// парсим JSON
 	if err := c.ShouldBindJSON(&data); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "incorrect data"})
 		return
 	}
 
-	frequency, err := time.ParseDuration(data.Frequency)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid frequency format"})
-		return
-	}
-
-	if !isValidFrequency(frequency) {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "invalid frequency period"})
-		return
+	// если не передана продолжительность, устанавливаем ее по умолчанию
+	if data.Duration == "" {
+		data.Duration = envs.Config.DefaultDuration
 	}
 
 	tx, err := db.Conn.Begin()
@@ -92,7 +88,7 @@ func createSchedule(c *gin.Context) {
 		return
 	}
 
-	var scheduleID int64
+	var scheduleID, frequencySeconds int64
 	var startDate, endDate time.Time
 	if err := tx.QueryRow(
 		QUERY_SCHEDULE_CREATE,
@@ -100,12 +96,12 @@ func createSchedule(c *gin.Context) {
 		data.MedicationID,
 		data.Frequency,
 		data.Duration,
-	).Scan(&scheduleID, &startDate, &endDate); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+	).Scan(&scheduleID, &startDate, &endDate, &frequencySeconds); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "error writing schedule to database, check input data"})
 		return
 	}
 
-	timing := generateSchedule(startDate, endDate, frequency)
+	timing := generateSchedule(startDate, endDate, time.Duration(frequencySeconds)*time.Second)
 
 	for _, taking := range timing {
 		if _, err := tx.Exec(QUERY_TAKING_CREATE, scheduleID, taking); err != nil {

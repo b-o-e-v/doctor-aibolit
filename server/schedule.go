@@ -4,11 +4,6 @@ import (
 	"time"
 )
 
-func isValidFrequency(frequency time.Duration) bool {
-	// проверяем, что duration больше или равно 1 час и меньше или равно 24 часам (1 день) (согласно ТЗ)
-	return frequency >= time.Hour && frequency <= 24*time.Hour
-}
-
 func generateSchedule(startDate, endDate time.Time, frequency time.Duration) []time.Time {
 	var schedule []time.Time
 
