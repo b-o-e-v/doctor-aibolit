@@ -186,14 +186,14 @@ func getSchedule(c *gin.Context) {
 			&taking.TakingTime,
 			&taking.MedicationID,
 		); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "server error"})
 			return
 		}
 		takings = append(takings, taking)
 	}
 
 	if rows.Err() != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server error"})
 		return
 	}
 
