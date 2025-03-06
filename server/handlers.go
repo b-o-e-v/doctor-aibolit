@@ -23,6 +23,16 @@ const QUERY_SCHEDULE_CREATE = `
   RETURNING id, start_date, end_date, EXTRACT(EPOCH FROM frequency) AS frequency_seconds
 `
 const QUERY_USER_SCHEDULES = `SELECT id FROM schedules WHERE user_id = $1`
+const QUERY_USER_SCHEDULE = `
+	SELECT t.id, t.taking_time, s.medication_id
+	FROM takings t
+	JOIN schedules s ON t.schedule_id = s.id
+	WHERE t.taking_time >= NOW() 
+		AND t.taking_time::DATE = CURRENT_DATE
+		AND s.user_id = $1
+		AND t.schedule_id = $2
+	ORDER BY t.taking_time ASC
+`
 
 // поскольку у нас есть отдельная таблица с пользователями, нам нужно проверить его существование
 // в случае отсутствия пользователя, создадим его, пока мы не реализоываем регистрацию
@@ -123,39 +133,75 @@ func getSchedules(c *gin.Context) {
 	userID := c.Query("user_id")
 
 	if userID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "data is required"})
 		return
 	}
 
-	rows, err := db.Conn.Query("SELECT id FROM schedules WHERE user_id = $1", userID)
+	rows, err := db.Conn.Query(QUERY_USER_SCHEDULES, userID)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch schedules"})
 		return
 	}
 	defer rows.Close()
 
-	var scheduleIDs []int
+	var scheduleIDS []int
 	for rows.Next() {
-		var id int
-		if err := rows.Scan(&id); err != nil {
+		var ID int
+		if err := rows.Scan(&ID); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "server error"})
 			return
 		}
-		scheduleIDs = append(scheduleIDs, id)
+		scheduleIDS = append(scheduleIDS, ID)
 	}
 
 	if rows.Err() != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error iterating rows"})
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "server error"})
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"user_id": userID, "schedules": scheduleIDs})
+	c.JSON(http.StatusOK, gin.H{"user_id": userID, "schedules": scheduleIDS})
 }
 
 func getSchedule(c *gin.Context) {
 	userID := c.Query("user_id")
 	scheduleID := c.Query("schedule_id")
-	c.JSON(http.StatusOK, gin.H{"message": "schedule fetched", "user_id": userID, "schedule_id": scheduleID})
+
+	if userID == "" || scheduleID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "data is required"})
+		return
+	}
+
+	rows, err := db.Conn.Query(QUERY_USER_SCHEDULE, userID, scheduleID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch schedule"})
+		return
+	}
+	defer rows.Close()
+
+	var takings []models.Taking
+	for rows.Next() {
+		var taking models.Taking
+		if err := rows.Scan(
+			&taking.ID,
+			&taking.TakingTime,
+			&taking.MedicationID,
+		); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		takings = append(takings, taking)
+	}
+
+	if rows.Err() != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"user_id":     userID,
+		"schedule_id": scheduleID,
+		"schedule":    takings,
+	})
 }
 
 func getNextTakings(c *gin.Context) {
