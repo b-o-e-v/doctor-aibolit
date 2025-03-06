@@ -22,6 +22,7 @@ const QUERY_SCHEDULE_CREATE = `
   VALUES ($1, $2, $3, $4, NOW())
   RETURNING id, start_date, end_date, EXTRACT(EPOCH FROM frequency) AS frequency_seconds
 `
+const QUERY_USER_SCHEDULES = `SELECT id FROM schedules WHERE user_id = $1`
 
 // поскольку у нас есть отдельная таблица с пользователями, нам нужно проверить его существование
 // в случае отсутствия пользователя, создадим его, пока мы не реализоываем регистрацию
@@ -120,7 +121,35 @@ func createSchedule(c *gin.Context) {
 
 func getSchedules(c *gin.Context) {
 	userID := c.Query("user_id")
-	c.JSON(http.StatusOK, gin.H{"message": "schedules fetched", "user_id": userID})
+
+	if userID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "user_id is required"})
+		return
+	}
+
+	rows, err := db.Conn.Query("SELECT id FROM schedules WHERE user_id = $1", userID)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch schedules"})
+		return
+	}
+	defer rows.Close()
+
+	var scheduleIDs []int
+	for rows.Next() {
+		var id int
+		if err := rows.Scan(&id); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "server error"})
+			return
+		}
+		scheduleIDs = append(scheduleIDs, id)
+	}
+
+	if rows.Err() != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error iterating rows"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"user_id": userID, "schedules": scheduleIDs})
 }
 
 func getSchedule(c *gin.Context) {
