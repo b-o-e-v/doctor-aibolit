@@ -3,6 +3,7 @@ package server
 import (
 	"database/sql"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/b-o-e-v/doctor-aibolit/pkg/db"
@@ -101,9 +102,15 @@ func createSchedule(ctx *gin.Context) {
 
 // получение всех ids расписаний юзера
 func getSchedules(ctx *gin.Context) {
-	userID := ctx.Query("user_id")
+	userIDStr := ctx.Query("user_id")
 
-	if userID == "" {
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		handleError(ctx, "invalid user_id, must be an integer", err, http.StatusBadRequest)
+		return
+	}
+
+	if userID == 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": "data is required",
 		})
@@ -143,10 +150,22 @@ type Taking struct {
 
 // получение конкретного расписания на сегодняшний день
 func getSchedule(ctx *gin.Context) {
-	userID := ctx.Query("user_id")
-	scheduleID := ctx.Query("schedule_id")
+	userIDStr := ctx.Query("user_id")
+	scheduleIDStr := ctx.Query("schedule_id")
 
-	if userID == "" || scheduleID == "" {
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		handleError(ctx, "invalid user_id, must be an integer", err, http.StatusBadRequest)
+		return
+	}
+
+	scheduleID, err := strconv.Atoi(scheduleIDStr)
+	if err != nil {
+		handleError(ctx, "invalid schedule_id, must be an integer", err, http.StatusBadRequest)
+		return
+	}
+
+	if userID == 0 || scheduleID == 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": "data is required",
 		})
@@ -188,14 +207,20 @@ func getSchedule(ctx *gin.Context) {
 
 type TakingWithScheduleID struct {
 	Taking
-	ScheduleID string `json:"schedule_id"`
+	ScheduleID int64 `json:"schedule_id"`
 }
 
 // получение ближайших приемов лекарств
 func getNextTakings(ctx *gin.Context) {
-	userID := ctx.Query("user_id")
+	userIDStr := ctx.Query("user_id")
 
-	if userID == "" {
+	userID, err := strconv.Atoi(userIDStr)
+	if err != nil {
+		handleError(ctx, "invalid user_id, must be an integer", err, http.StatusBadRequest)
+		return
+	}
+
+	if userID == 0 {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": "data is required",
 		})
