@@ -2,78 +2,46 @@ package server
 
 import (
 	"database/sql"
-	"fmt"
 	"net/http"
 	"time"
 
-	"github.com/b-o-e-v/doctor-aibolit/models"
 	"github.com/b-o-e-v/doctor-aibolit/pkg/db"
 	"github.com/b-o-e-v/doctor-aibolit/pkg/envs"
+	"github.com/b-o-e-v/doctor-aibolit/pkg/utils"
 	"github.com/gin-gonic/gin"
 )
 
-const QUERY_USER_EXISTS = `SELECT EXISTS(SELECT 1 FROM users WHERE id=$1)`
-const QUERY_USER_CREATE = `INSERT INTO users (id, name) VALUES ($1, $2) RETURNING id`
-const QUERY_MEDICATION_EXISTS = `SELECT EXISTS(SELECT 1 FROM medications WHERE id=$1)`
-const QUERY_MEDICATION_CREATE = `INSERT INTO medications (id, name) VALUES ($1, $2) RETURNING id`
-const QUERY_TAKING_CREATE = `INSERT INTO takings (schedule_id, taking_time) VALUES ($1, $2)`
-const QUERY_SCHEDULE_CREATE = `
-  INSERT INTO schedules (user_id, medication_id, frequency, duration, start_date)
-  VALUES ($1, $2, $3, $4, NOW())
-  RETURNING id, start_date, end_date, EXTRACT(EPOCH FROM frequency) AS frequency_seconds
-`
-const QUERY_USER_SCHEDULES = `SELECT id FROM schedules WHERE user_id = $1`
-const QUERY_USER_SCHEDULE = `
-	SELECT t.id, t.taking_time, s.medication_id
-	FROM takings t
-	JOIN schedules s ON t.schedule_id = s.id
-	WHERE t.taking_time >= NOW() 
-		AND t.taking_time::DATE = CURRENT_DATE
-		AND s.user_id = $1
-		AND t.schedule_id = $2
-	ORDER BY t.taking_time ASC
-`
-
-// поскольку у нас есть отдельная таблица с пользователями, нам нужно проверить его существование
-// в случае отсутствия пользователя, создадим его, пока мы не реализоываем регистрацию
-// далее это можно будет перенести в отдельный маршрут
-func checkUserExists(tx *sql.Tx, userID int64) error {
-	var userExists bool
-	if err := tx.QueryRow(QUERY_USER_EXISTS, userID).Scan(&userExists); err != nil {
-		return fmt.Errorf("failed to check if user exists")
+// для создания расписания необходим пользователь и лекарство
+// (в перспективе для их создания нужен отдельный маршрут)
+func checkEntityExists(tx *sql.Tx, query string, createQuery string, id int64, defaultName string) error {
+	var exists bool
+	if err := tx.QueryRow(query, id).Scan(&exists); err != nil {
+		return err
 	}
 
-	if !userExists {
-		if _, err := tx.Exec(QUERY_USER_CREATE, userID, "sick"); err != nil {
-			return fmt.Errorf("failed to create user")
+	if !exists {
+		if _, err := tx.Exec(createQuery, id, defaultName); err != nil {
+			return err
 		}
 	}
 
 	return nil
 }
 
-// то же самое с лекарствами (в перспективе для создания лекарств будет отдельный маршрут)
-func checkMedicationExists(tx *sql.Tx, medicationID int64) error {
-	var medicationExists bool
-	if err := tx.QueryRow(QUERY_MEDICATION_EXISTS, medicationID).Scan(&medicationExists); err != nil {
-		return fmt.Errorf("failed to check if medication exists")
-	}
-
-	if !medicationExists {
-		if _, err := tx.Exec(QUERY_MEDICATION_CREATE, medicationID, "ascorbic"); err != nil {
-			return fmt.Errorf("failed to create medication")
-		}
-	}
-
-	return nil
+type ScheduleRequest struct {
+	UserID       int64  `json:"user_id"`
+	MedicationID int64  `json:"medication_id"`
+	Frequency    string `json:"frequency"`
+	Duration     string `json:"duration,omitempty"`
 }
 
-func createSchedule(c *gin.Context) {
-	var data models.ScheduleRequest
+// создание расписания
+func createSchedule(ctx *gin.Context) {
+	var data ScheduleRequest
 
 	// парсим JSON
-	if err := c.ShouldBindJSON(&data); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "incorrect data"})
+	if err := ctx.ShouldBindJSON(&data); err != nil {
+		handleError(ctx, "incorrect data", err, http.StatusBadRequest)
 		return
 	}
 
@@ -84,18 +52,19 @@ func createSchedule(c *gin.Context) {
 
 	tx, err := db.Conn.Begin()
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "server error"})
+		handleError(ctx, "failed to start database transaction", err)
 		return
 	}
 	defer tx.Rollback()
 
-	if err := checkUserExists(tx, data.UserID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+	// пользователь и лекарство необходимы для связей таблиц
+	if err := checkEntityExists(tx, QUERY_USER_EXISTS, QUERY_USER_CREATE, data.UserID, "sick"); err != nil {
+		handleError(ctx, "failed to check user exists", err)
 		return
 	}
 
-	if err := checkMedicationExists(tx, data.MedicationID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+	if err := checkEntityExists(tx, QUERY_MEDICATION_EXISTS, QUERY_MEDICATION_CREATE, data.MedicationID, "ascorbic"); err != nil {
+		handleError(ctx, "failed to check medication exists", err)
 		return
 	}
 
@@ -108,103 +77,170 @@ func createSchedule(c *gin.Context) {
 		data.Frequency,
 		data.Duration,
 	).Scan(&scheduleID, &startDate, &endDate, &frequencySeconds); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "error writing schedule to database, check input data"})
+		handleError(ctx, "error writing schedule to database, check input data", err)
 		return
 	}
 
+	// генерируем расписание
 	timing := generateSchedule(startDate, endDate, time.Duration(frequencySeconds)*time.Second)
 
 	for _, taking := range timing {
 		if _, err := tx.Exec(QUERY_TAKING_CREATE, scheduleID, taking); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to insert taking time"})
+			handleError(ctx, "failed to insert taking time", err)
 			return
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "server error"})
+		handleError(ctx, "failed to commit transaction", err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"schedule_id": scheduleID})
+	ctx.JSON(http.StatusOK, gin.H{"schedule_id": scheduleID})
 }
 
-func getSchedules(c *gin.Context) {
-	userID := c.Query("user_id")
+// получение всех ids расписаний юзера
+func getSchedules(ctx *gin.Context) {
+	userID := ctx.Query("user_id")
 
 	if userID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "data is required"})
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "data is required",
+		})
 		return
 	}
 
 	rows, err := db.Conn.Query(QUERY_USER_SCHEDULES, userID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch schedules"})
+		handleError(ctx, "failed to fetch user schedules", err)
 		return
 	}
 	defer rows.Close()
 
-	var scheduleIDS []int
+	var scheduleIDs []int
 	for rows.Next() {
 		var ID int
 		if err := rows.Scan(&ID); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "server error"})
+			handleError(ctx, "failed to scan schedule ID", err)
 			return
 		}
-		scheduleIDS = append(scheduleIDS, ID)
+		scheduleIDs = append(scheduleIDs, ID)
 	}
 
 	if rows.Err() != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "server error"})
+		handleError(ctx, "failed to process rows", err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"user_id": userID, "schedules": scheduleIDS})
+	ctx.JSON(http.StatusOK, gin.H{"user_id": userID, "schedules": scheduleIDs})
 }
 
-func getSchedule(c *gin.Context) {
-	userID := c.Query("user_id")
-	scheduleID := c.Query("schedule_id")
+type Taking struct {
+	ID           int64     `json:"id"`
+	TakingTime   time.Time `json:"taking_time"`
+	MedicationID int64     `json:"medication_id"`
+}
+
+// получение конкретного расписания на сегодняшний день
+func getSchedule(ctx *gin.Context) {
+	userID := ctx.Query("user_id")
+	scheduleID := ctx.Query("schedule_id")
 
 	if userID == "" || scheduleID == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "data is required"})
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "data is required",
+		})
 		return
 	}
 
 	rows, err := db.Conn.Query(QUERY_USER_SCHEDULE, userID, scheduleID)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to fetch schedule"})
+		handleError(ctx, "failed to fetch user schedule", err)
 		return
 	}
 	defer rows.Close()
 
-	var takings []models.Taking
+	var takings []Taking
 	for rows.Next() {
-		var taking models.Taking
+		var taking Taking
 		if err := rows.Scan(
 			&taking.ID,
 			&taking.TakingTime,
 			&taking.MedicationID,
 		); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "server error"})
+			handleError(ctx, "failed to scan takings", err)
 			return
 		}
 		takings = append(takings, taking)
 	}
 
 	if rows.Err() != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "server error"})
+		handleError(ctx, "failed to process rows", err)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	ctx.JSON(http.StatusOK, gin.H{
 		"user_id":     userID,
 		"schedule_id": scheduleID,
-		"schedule":    takings,
+		"takings":     takings,
 	})
 }
 
-func getNextTakings(c *gin.Context) {
-	userID := c.Query("user_id")
-	c.JSON(http.StatusOK, gin.H{"message": "next takings fetched", "user_id": userID})
+type TakingWithScheduleID struct {
+	Taking
+	ScheduleID string `json:"schedule_id"`
+}
+
+// получение ближайших приемов лекарств
+func getNextTakings(ctx *gin.Context) {
+	userID := ctx.Query("user_id")
+
+	if userID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": "data is required",
+		})
+		return
+	}
+
+	rows, err := db.Conn.Query(QUERY_USER_TAKINGS, envs.Config.ComingPeriod, userID)
+	if err != nil {
+		handleError(ctx, "failed to fetch user takings", err)
+		return
+	}
+	defer rows.Close()
+
+	var takings []TakingWithScheduleID
+	for rows.Next() {
+		var taking TakingWithScheduleID
+		if err := rows.Scan(
+			&taking.ID,
+			&taking.TakingTime,
+			&taking.MedicationID,
+			&taking.ScheduleID,
+		); err != nil {
+			handleError(ctx, "failed to scan takings", err)
+			return
+		}
+		takings = append(takings, taking)
+	}
+
+	if rows.Err() != nil {
+		handleError(ctx, "failed to process rows", err)
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{
+		"user_id": userID,
+		"takings": takings,
+	})
+}
+
+func handleError(ctx *gin.Context, message string, err error, statusCode ...int) {
+	if len(statusCode) == 0 {
+		statusCode = append(statusCode, http.StatusInternalServerError)
+	}
+
+	ctx.JSON(statusCode[0], gin.H{
+		"error": utils.FormatErrorMessage(message, err),
+	})
 }

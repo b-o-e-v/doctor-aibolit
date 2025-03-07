@@ -15,6 +15,7 @@ type Envs struct {
 	HostDB          string
 	PortDB          string
 	DefaultDuration string
+	ComingPeriod    string
 }
 
 var Config = &Envs{}
@@ -32,6 +33,7 @@ func Init() error {
 		HostDB:          os.Getenv("POSTGRES_HOST"),
 		PortDB:          os.Getenv("POSTGRES_PORT"),
 		DefaultDuration: os.Getenv("DEFAULT_DURATION"),
+		ComingPeriod:    os.Getenv("COMING_PERIOD"),
 	}
 
 	fmt.Println("successfully loaded environment variables!")
