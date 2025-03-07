@@ -62,7 +62,7 @@ jobs:
         host: ${{ secrets.HOST }}
         username: ${{ secrets.USER }}
         key: ${{ secrets.SSH_KEY }}
-        source: "docker-compose.yml"
+        source: "docker-compose.production.yml"
         target: "/${{ secrets.USER }}/doctor-aibolit"
 
     - name: Copy migrations folder via ssh
@@ -82,6 +82,6 @@ jobs:
         key: ${{ secrets.SSH_KEY }}
         script: |
           cd doctor-aibolit
-          sudo docker compose -f docker-compose.yml pull
-          sudo docker compose -f docker-compose.yml down
-          sudo docker compose -f docker-compose.yml up -d
+          sudo docker compose -f docker-compose.production.yml pull
+          sudo docker compose -f docker-compose.production.yml down
+          sudo docker compose -f docker-compose.production.yml up -d
